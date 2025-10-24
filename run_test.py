@@ -1,36 +1,45 @@
 import argparse
 import torch
-import numpy as np
-import os
-import random
-import matplotlib.pyplot as plt
 from accelerate import Accelerator, DeepSpeedPlugin
 from accelerate import DistributedDataParallelKwargs
 from torch import nn
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 
 from models import Autoformer, DLinear, TimeLLM
 from data_provider.data_factory import data_provider
+import random
+import numpy as np
+import os
+
+os.environ['CURL_CA_BUNDLE'] = ''
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:64"
+
 from utils.tools import load_content
 
-# Set matplotlib backend for non-interactive plotting
 plt.switch_backend('agg')
 
 parser = argparse.ArgumentParser(description='Time-LLM Testing')
 
+fix_seed = 2021
+random.seed(fix_seed)
+torch.manual_seed(fix_seed)
+np.random.seed(fix_seed)
+
 # basic config
-parser.add_argument('--task_name', type=str, default='long_term_forecast',
+parser.add_argument('--task_name', type=str, required=True, default='long_term_forecast',
                     help='task name, options:[long_term_forecast, short_term_forecast, imputation, classification, anomaly_detection]')
-parser.add_argument('--model_id', type=str, required=True, help='model id')
-parser.add_argument('--model_comment', type=str, required=True, help='prefix when saving test results')
-parser.add_argument('--model', type=str, default='TimeLLM', help='model name')
-parser.add_argument('--checkpoint_path', type=str, required=True, help='path to trained checkpoint file')
+parser.add_argument('--model_id', type=str, required=True, default='test', help='model id')
+parser.add_argument('--model_comment', type=str, required=True, default='none', help='prefix when saving test results')
+parser.add_argument('--model', type=str, required=True, default='Autoformer',
+                    help='model name, options: [Autoformer, DLinear]')
 parser.add_argument('--seed', type=int, default=2021, help='random seed')
+parser.add_argument('--checkpoint_path', type=str, required=True, help='path to trained checkpoint file')
 
 # data loader
-parser.add_argument('--data', type=str, required=True, help='dataset type')
+parser.add_argument('--data', type=str, required=True, default='ETTm1', help='dataset type')
 parser.add_argument('--root_path', type=str, default='./dataset', help='root path of the data file')
-parser.add_argument('--data_path', type=str, required=True, help='data file')
+parser.add_argument('--data_path', type=str, default='ETTh1.csv', help='data file')
 parser.add_argument('--features', type=str, default='M',
                     help='forecasting task, options:[M, S, MS]; '
                          'M:multivariate predict multivariate, S: univariate predict univariate, '
@@ -69,10 +78,10 @@ parser.add_argument('--patch_len', type=int, default=16, help='patch length')
 parser.add_argument('--stride', type=int, default=8, help='stride')
 parser.add_argument('--prompt_domain', type=int, default=0, help='')
 parser.add_argument('--llm_model', type=str, default='LLAMA', help='LLM model') # LLAMA, GPT2, BERT
-parser.add_argument('--llm_dim', type=int, default=4096, help='LLM model dimension')# LLama7b:4096; GPT2-small:768; BERT-base:768
-parser.add_argument('--llm_layers', type=int, default=32)
+parser.add_argument('--llm_dim', type=int, default='4096', help='LLM model dimension')# LLama7b:4096; GPT2-small:768; BERT-base:768
+parser.add_argument('--llm_layers', type=int, default=6)
 
-# optimization
+# testing
 parser.add_argument('--num_workers', type=int, default=10, help='data loader num workers')
 parser.add_argument('--batch_size', type=int, default=32, help='batch size of test input data')
 parser.add_argument('--des', type=str, default='test', help='exp description')
@@ -82,22 +91,26 @@ parser.add_argument('--plot_samples', type=int, default=5, help='number of sampl
 
 args = parser.parse_args()
 
-# Set random seed for reproducibility
+# Update seed based on args
 random.seed(args.seed)
 torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
-# Setup accelerator
 ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
 deepspeed_plugin = DeepSpeedPlugin(hf_ds_config='./ds_config_zero2.json')
 accelerator = Accelerator(kwargs_handlers=[ddp_kwargs], deepspeed_plugin=deepspeed_plugin)
 
 # Load test data
-accelerator.print('Loading test dataset...')
+accelerator.print('='*80)
+accelerator.print('LOADING TEST DATA')
+accelerator.print('='*80)
 test_data, test_loader = data_provider(args, 'test')
+accelerator.print(f'Test samples: {len(test_data)}')
 
 # Build model
-accelerator.print('Building model...')
+accelerator.print('\n' + '='*80)
+accelerator.print('BUILDING MODEL')
+accelerator.print('='*80)
 if args.model == 'Autoformer':
     model = Autoformer.Model(args).float()
 elif args.model == 'DLinear':
@@ -109,18 +122,31 @@ else:
 args.content = load_content(args)
 
 # Load checkpoint
-accelerator.print(f'Loading checkpoint from {args.checkpoint_path}...')
+accelerator.print('\n' + '='*80)
+accelerator.print('LOADING CHECKPOINT')
+accelerator.print('='*80)
+accelerator.print(f'Checkpoint path: {args.checkpoint_path}')
 if not os.path.exists(args.checkpoint_path):
-    raise FileNotFoundError(f"Checkpoint not found at {args.checkpoint_path}")
+    accelerator.print(f'ERROR: Checkpoint not found at {args.checkpoint_path}')
+    accelerator.print('\nAvailable checkpoints:')
+    if os.path.exists('./checkpoints'):
+        for root, dirs, files in os.walk('./checkpoints'):
+            for file in files:
+                if file == 'checkpoint':
+                    accelerator.print(f'  - {os.path.join(root, file)}')
+    exit(1)
 
 checkpoint = torch.load(args.checkpoint_path, map_location='cpu')
 model.load_state_dict(checkpoint)
+accelerator.print('✓ Checkpoint loaded successfully')
 
 # Prepare model
 test_loader, model = accelerator.prepare(test_loader, model)
 
 # Test
-accelerator.print('Starting inference on test set...')
+accelerator.print('\n' + '='*80)
+accelerator.print('RUNNING INFERENCE')
+accelerator.print('='*80)
 model.eval()
 
 preds = []
@@ -132,7 +158,7 @@ total_loss = []
 total_mae_loss = []
 
 with torch.no_grad():
-    for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in tqdm(enumerate(test_loader)):
+    for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in tqdm(enumerate(test_loader), desc='Testing'):
         batch_x = batch_x.float().to(accelerator.device)
         batch_y = batch_y.float().to(accelerator.device)
         batch_x_mark = batch_x_mark.float().to(accelerator.device)
@@ -179,7 +205,9 @@ preds_scaled = np.concatenate(preds, axis=0)
 trues_scaled = np.concatenate(trues, axis=0)
 
 # Inverse transform to get original scale
-accelerator.print('\nInverse transforming to original scale...')
+accelerator.print('\n' + '='*80)
+accelerator.print('INVERSE TRANSFORMING TO ORIGINAL SCALE')
+accelerator.print('='*80)
 preds_original = test_data.inverse_transform(preds_scaled.reshape(-1, preds_scaled.shape[-1])).reshape(preds_scaled.shape)
 trues_original = test_data.inverse_transform(trues_scaled.reshape(-1, trues_scaled.shape[-1])).reshape(trues_scaled.shape)
 
@@ -192,9 +220,6 @@ rmse_scaled = np.sqrt(mse_scaled)
 mse_original = np.mean((preds_original - trues_original) ** 2)
 mae_original = np.mean(np.abs(preds_original - trues_original))
 rmse_original = np.sqrt(mse_original)
-
-avg_loss = np.average(total_loss)
-avg_mae_loss = np.average(total_mae_loss)
 
 # Print results
 accelerator.print('\n' + '='*80)
@@ -213,7 +238,7 @@ accelerator.print(f'  Predictions: {preds_scaled.shape}')
 accelerator.print(f'  Ground truth: {trues_scaled.shape}')
 accelerator.print('='*80)
 
-# Save results
+# Save results and generate plots
 if accelerator.is_local_main_process:
     folder_path = './test_results/'
     if not os.path.exists(folder_path):
@@ -232,15 +257,15 @@ if accelerator.is_local_main_process:
              mae_original=mae_original,
              rmse_original=rmse_original)
 
-    accelerator.print(f'\nResults saved to {result_file}')
+    accelerator.print(f'\n✓ Results saved to {result_file}')
 
-    # ==================== PLOTTING ====================
+    # Generate plots
     accelerator.print('\n' + '='*80)
     accelerator.print('GENERATING PLOTS')
     accelerator.print('='*80)
 
     # Get OT column index (last column)
-    ot_index = -1  # OT is the target column (last column)
+    ot_index = -1
 
     num_samples = min(args.plot_samples, len(preds_scaled))
     accelerator.print(f'Plotting {num_samples} samples...')
@@ -363,4 +388,4 @@ if accelerator.is_local_main_process:
     accelerator.print(f'✓ All plots saved to: {folder_path}')
     accelerator.print('='*80)
 
-accelerator.print('\nTesting completed!')
+accelerator.print('\n✓ Testing completed!')
