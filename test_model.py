@@ -18,9 +18,11 @@ from utils.tools import load_content
 
 # ==================== CONFIGURATION ====================
 # Set your configuration here
+# This configuration matches GPT2_PPData.sh
 CONFIG = {
     # Checkpoint path - CHANGE THIS TO YOUR ACTUAL CHECKPOINT PATH
-    'checkpoint_path': './checkpoints/long_term_forecast_PPData_96_96_TimeLLM_PPData_ftM_sl96_ll48_pl96_dm16_nh8_el2_dl1_df32_fc3_ebtimeF_test_0-TimeLLM-PPData/checkpoint',
+    # Expected path format: ./checkpoints/short_term_forecast_PPData_90_6_GPT2_PPData_ftM_sl90_ll6_pl6_dm16_nh8_el2_dl1_df32_fc3_ebtimeF_Power plant data_0-GPT2-PPData/checkpoint
+    'checkpoint_path': './checkpoints/short_term_forecast_PPData_90_6_GPT2_PPData_ftM_sl90_ll6_pl6_dm16_nh8_el2_dl1_df32_fc3_ebtimeF_Power plant data_0-GPT2-PPData/checkpoint',
 
     # Data configuration
     'data': 'PPData',
@@ -30,14 +32,14 @@ CONFIG = {
     'features': 'M',  # M: multivariate, S: univariate, MS: multivariate predict univariate
 
     # Model configuration
-    'model': 'TimeLLM',
-    'model_id': 'PPData_96_96',
-    'model_comment': 'TimeLLM-PPData',
+    'model': 'GPT2',  # GPT2 uses TimeLLM architecture with GPT2 backbone
+    'model_id': 'PPData_90_6',  # Changed to match GPT2_PPData.sh
+    'model_comment': 'GPT2-PPData',  # Changed to match GPT2_PPData.sh
 
-    # Sequence configuration
-    'seq_len': 96,
-    'label_len': 48,
-    'pred_len': 96,
+    # Sequence configuration (SHORT-TERM FORECAST)
+    'seq_len': 90,  # Changed from 96 to 90
+    'label_len': 6,  # Changed from 48 to 6
+    'pred_len': 6,   # Changed from 96 to 6 (short-term)
 
     # Model architecture
     'enc_in': 43,
@@ -51,23 +53,26 @@ CONFIG = {
     'factor': 3,
     'dropout': 0.1,
 
-    # LLM configuration
-    'llm_model': 'LLAMA',
-    'llm_dim': 4096,
-    'llm_layers': 32,
+    # LLM configuration (GPT2 settings)
+    # Note: GPT2_PPData.sh doesn't specify --llm_model, so it defaults to LLAMA
+    # If you want to use GPT2 backbone, make sure your training used --llm_model GPT2
+    'llm_model': 'GPT2',  # Options: 'LLAMA', 'GPT2', 'BERT'
+    'llm_dim': 4096,      # LLama7b:4096; GPT2-small:768; BERT-base:768
+    'llm_layers': 6,      # Changed from 32 to 6 (GPT2 layers)
 
     # Other settings
     'embed': 'timeF',
-    'freq': 'h',
+    'freq': 's',  # Changed from 'h' to 's' (seconds)
     'activation': 'gelu',
     'output_attention': False,
     'patch_len': 16,
     'stride': 8,
-    'batch_size': 16,
+    'batch_size': 24,  # Changed from 16 to 24 to match GPT2_PPData.sh
     'num_workers': 4,
     'use_amp': False,
     'percent': 100,
-    'des': 'test',
+    'des': 'Power plant data',  # Changed to match GPT2_PPData.sh
+    'task_name': 'short_term_forecast',  # Added task_name
 
     # Output settings
     'save_results': True,
