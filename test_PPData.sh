@@ -8,6 +8,7 @@ num_process=1
 batch_size=24
 d_model=16
 d_ff=32
+plot_samples=5  # Number of samples to plot
 
 # IMPORTANT: Set this to your actual checkpoint path!
 # The checkpoint is saved during training with the naming pattern:
@@ -61,10 +62,16 @@ accelerate launch --mixed_precision bf16 --num_processes $num_process --main_pro
   --llm_layers $llm_layers \
   --llm_dim 4096 \
   --des 'Power plant data' \
-  --model_comment $comment
+  --model_comment $comment \
+  --plot_samples $plot_samples
 
 echo ""
 echo "=========================================="
 echo "Testing completed!"
 echo "Results saved to ./test_results/"
+echo "Plots generated:"
+echo "  - PPData_PPData_90_6_scaled_predictions.png"
+echo "  - PPData_PPData_90_6_original_predictions.png"
+echo "  - PPData_PPData_90_6_comparison.png"
+echo "  - PPData_PPData_90_6_error_distribution.png"
 echo "=========================================="
