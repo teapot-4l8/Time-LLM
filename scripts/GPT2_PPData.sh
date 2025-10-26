@@ -26,7 +26,7 @@ accelerate launch --mixed_precision bf16  run_main.py \
   --dec_in 43 \
   --c_out 43 \
   --llm_dim 4096 \
-  --des 'Power plant data' \
+  --des 'Powerplantdata' \
   --itr 1 \
   --llm_layers 6 \
   --d_model $d_model \
